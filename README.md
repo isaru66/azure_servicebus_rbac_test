@@ -52,7 +52,7 @@ This project provides:
 ## 🚀 Service Bus Overview
 Azure Service Bus is a fully managed enterprise message broker service that enables reliable communication between various components and services. Here's a high-level overview of the architecture:
 
-![Azure Service Bus Overview](docs\images\AzureServiceBus-Overview.png)
+![Azure Service Bus Overview](docs/images/AzureServiceBus-Overview.png)
 
 Azure Service Bus offers two messaging patterns:
 - **Queue-based**: Point-to-point communication model
