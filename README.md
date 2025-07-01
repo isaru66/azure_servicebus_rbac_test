@@ -225,17 +225,12 @@ cd sample-code/azure-servicebus-consumer-sample
 mvn spring-boot:run
 ```
 
-## 💰 Cost Management & Chargeback
+## ServieBus Usage Insight & Chargeback
 
-### Understanding Service Bus Pricing
+Azure Service Bus can view usage from `Monitoring > Insights`
+![Azure Service Bus Usage Insight](docs/images/Usage/ServiceBus-Usage-Insight.png)
 
-To be discuss
-
-Azure Service Bus costs are based on:
-- **Messaging Operations**: Number of messages sent/received
-- **Brokered Connections**: Number of concurrent connections
-- **Relay Hours**: For hybrid connections (if used)
-
+if we know which Application use with queue,topic. We can use this metric for charge back to each application.
 
 ## 🧪 Testing Scenarios
 
