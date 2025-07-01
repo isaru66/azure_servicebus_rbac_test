@@ -192,6 +192,8 @@ spring.cloud.azure.servicebus.entity-name=${AZURE_SERVICEBUS_QUEUE}
 spring.cloud.azure.servicebus.entity-type=${AZURE_SERVICEBUS_ENTITY_TYPE}
 ```
 
+The same application code can be use to produce on both QUEUE and TOPIC
+
 **Running the Producer:**
 ```bash
 cd sample-code/azure-servicebus-producer-sample
@@ -215,6 +217,8 @@ spring.cloud.azure.servicebus.entity-type=${AZURE_SERVICEBUS_ENTITY_TYPE}
 spring.cloud.azure.servicebus.subscription-name=${AZURE_SERVICEBUS_SUBSCRIPTION_NAME}
 ```
 
+The same application code can be use to consume from both QUEUE and TOPIC-subscription
+
 **Running the Consumer:**
 ```bash
 cd sample-code/azure-servicebus-consumer-sample
@@ -233,42 +237,38 @@ Azure Service Bus costs are based on:
 - **Relay Hours**: For hybrid connections (if used)
 
 
-
 ## 🧪 Testing Scenarios
 
 ### RBAC Testing Scenarios
 
-#### Scenario 1: Cross-Application Communication
-- **Producer App**: Has `Data Sender` role on topic
-- **Consumer App**: Has `Data Receiver` role on subscription
-- **Test**: Verify message flow works without `Data Owner` permissions
+![Azure Service Bus Overview](docs/images/AzureServiceBus-RBAC-test.png)
 
-#### Scenario 2: Restricted Queue Access
-- **App A**: `Data Sender` role on Queue A only
-- **App B**: `Data Receiver` role on Queue B only  
-- **Test**: Verify each app cannot access the other's queue
+Plan to test RBAC at different level using AKS with workload identity.
 
-#### Scenario 3: Administrative Operations
-- **Admin User**: `Data Owner` role at namespace level
-- **Test**: Create/delete queues, topics, and subscriptions
+#### Scenario 1: Queue Normal Case
+- **Producer App**: Has `Azure Service Bus Data Sender` role on queue-1
+- **Consumer App**: Has `Azure Service Bus Data Receiver` role on queue-1
+- **Test**: Everything should success as every service have required permission.
 
-### Environment Variables for Testing
+#### Scenario 2: Queue Scaled Consumer
+- **Producer App**: Has `Azure Service Bus Data Sender` role on queue-1
+- **Consumer App**: Has `Azure Service Bus Data Receiver` role on queue-1, Scale Consumer App to 3 pod and see message distribution
+- **Test**: Everything should success as every service have required permission.
 
-Create `.env` files for different test scenarios:
+#### Scenario 3: Queue Error case
+- **Producer App**: Has `Azure Service Bus Data Sender` role on queue-1, but set environment variable to access queue-2
+- **Consumer App**: Has `Azure Service Bus Data Receiver` role on queue-1, but set environment variable to access queue-2
+- **Test**: Azure should show access denined error for both **Producer App** and **Consumer App**
 
-**Producer Test Environment:**
-```bash
-AZURE_SERVICEBUS_NAMESPACE=your-namespace.servicebus.windows.net
-AZURE_SERVICEBUS_QUEUE=queue-1
-AZURE_SERVICEBUS_ENTITY_TYPE=queue
-```
+#### Scenario 4: Topic Normal Case
+- **Producer App**: Has `Azure Service Bus Data Sender` role on topic-1
+- **Consumer App**: Has `Azure Service Bus Data Receiver` role on topic-1/subscription-1
+- **Test**: Everything should success as every service have required permission.
 
-**Consumer Test Environment:**
-```bash
-AZURE_SERVICEBUS_NAMESPACE=your-namespace.servicebus.windows.net
-AZURE_SERVICEBUS_QUEUE=queue-1
-AZURE_SERVICEBUS_ENTITY_TYPE=queue
-```
+#### Scenario 5: Topic Error case
+- **Producer App**: Has `Azure Service Bus Data Sender` role on topic-1, but set environment variable to access topic-2
+- **Consumer App**: Has `Azure Service Bus Data Receiver` role on topic-1/subscription-1, but set environment variable to access topic-1/subscription-2
+- **Test**: Azure should show access denined error for both **Producer App** and **Consumer App**
 
 ## 🐳 Deployment
 
@@ -279,17 +279,20 @@ Build and run the applications using Docker:
 ```bash
 # Build producer
 cd sample-code/azure-servicebus-producer-sample
-docker build -t servicebus-producer:latest .
+mvn package -DskipTests
+docker buildx build . --platform="linux/amd64,linux/arm64" -t isaru66/springboot-azure-servicebus-producer  --push 
 
 # Build consumer
 cd ../azure-servicebus-consumer-sample
-docker build -t servicebus-consumer:latest .
+mvn package -DskipTests
+docker buildx build . --platform="linux/amd64,linux/arm64" -t isaru66/springboot-azure-servicebus-consumer  --push 
 
 # Run with environment variables
 docker run -e AZURE_SERVICEBUS_NAMESPACE="your-namespace.servicebus.windows.net" \
            -e AZURE_SERVICEBUS_QUEUE="your-topic" \
            -e AZURE_SERVICEBUS_ENTITY_TYPE="topic" \
-           servicebus-producer:latest
+           -p 8080:8080 \
+           isaru66/springboot-azure-servicebus-producer
 ```
 
 ### Kubernetes Deployment
@@ -302,4 +305,37 @@ kubectl apply -f sample-code/azure-servicebus-producer-sample/k8s/deployment.yam
 
 # Apply consumer deployment
 kubectl apply -f sample-code/azure-servicebus-consumer-sample/k8s/deployment.yaml
+```
+
+Adjust pod template spec's environment variable section to change behavior
+
+```bash
+apiVersion: apps/v1
+kind: Deployment
+...
+spec:
+  ...
+  template:
+    spec:
+      serviceAccountName: sa-sb-queue-consumer
+      containers:
+      - name: sb-consumer
+        image: isaru66/springboot-azure-servicebus-consumer:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        env:
+        - name: AZURE_SERVICEBUS_QUEUE
+          value: "queue-1"
+        - name: AZURE_SERVICEBUS_ENTITY_TYPE
+          value: "queue"
+        ports:
+        - containerPort: 8080
+          name: sb-consumer
+      restartPolicy: Always
 ```
