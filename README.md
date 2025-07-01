@@ -243,32 +243,118 @@ Azure Service Bus costs are based on:
 
 ![Azure Service Bus Overview](docs/images/AzureServiceBus-RBAC-test.png)
 
-Plan to test RBAC at different level using AKS with workload identity.
+#### To setup Workload Identity
+You can refer to the full guide [here](https://learn.microsoft.com/en-us/azure/aks/workload-identity-deploy-cluster)
+
+- Get AKS ODIC issuer
+```
+AKS_OIDC_ISSUER="$(az aks show --name "${CLUSTER_NAME}" \
+    --resource-group "${RESOURCE_GROUP}" \
+    --query "oidcIssuerProfile.issuerUrl" \
+    --output tsv)"
+```
+
+- Go to user manage identity, then federate Identity to Kubernete Service Account
+
+![AKS Identity Federation](docs/images/RBAC-assignment/05-AKS-federated-credential.png)
+
+- Select Federate to `Kubernetes Accessing Azure Resource`
+
+![AKS Identity Federation](docs/images/RBAC-assignment/06-federate-to-kubernete.png)
+
+- Add AKS_ODIC issuer, namespace, service account that you want to link with this user identity
+
+![AKS Identity Federation](docs/images/RBAC-assignment/07-federate-to-kubernete-02.png)
+
+- In Kubernete, 
+ensure that your AKS cluster have ODIC enable and Workload identity enable
+create service account in the above namespace
+```
+# Service Account - with azure.workload.identity/client-id annotation
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    azure.workload.identity/client-id: "cb22d1f1-e114-4f25-a4a2-ed15a8e5accc" # UMI Client ID
+  name: "sa-sb-queue-producer"
+  namespace: "sb-queue-producer"
+```
+in deployment spec, add label `azure.workload.identity/use: "true"`
+```
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"  # Required for WorkloadIdentity. Only pods with this label can use workload identity.
+```
 
 #### Scenario 1: Queue Normal Case
 - **Producer App**: Has `Azure Service Bus Data Sender` role on queue-1
 - **Consumer App**: Has `Azure Service Bus Data Receiver` role on queue-1
 - **Test**: Everything should success as every service have required permission.
 
+##### Result
+Producer
+
+![Producer-Test](docs/images/TestResult/S1-producer-success.png)
+
+Consumer
+
+![Consumer-Test](docs/images/TestResult/S1-consumer-success.png)
+
 #### Scenario 2: Queue Scaled Consumer
 - **Producer App**: Has `Azure Service Bus Data Sender` role on queue-1
 - **Consumer App**: Has `Azure Service Bus Data Receiver` role on queue-1, Scale Consumer App to 3 pod and see message distribution
 - **Test**: Everything should success as every service have required permission.
+
+##### Result
+Consumer scale to 3 Pod
+![Producer-Test](docs/images/TestResult/S2-scaled-consumer-3pod.png)
+
+Consumer result
+![Consumer-Test](docs/images/TestResult/S2-consumer-message-distribution.png)
+In this case, the queue was partitioned into 2 segments. We can observe that messages are distributed across all 3 pods in sequential order, demonstrating effective load balancing of message processing.
 
 #### Scenario 3: Queue Error case
 - **Producer App**: Has `Azure Service Bus Data Sender` role on queue-1, but set environment variable to access queue-2
 - **Consumer App**: Has `Azure Service Bus Data Receiver` role on queue-1, but set environment variable to access queue-2
 - **Test**: Azure should show access denined error for both **Producer App** and **Consumer App**
 
+##### Result
+Producer
+![Producer-Test](docs/images/TestResult/S3-producer-error.png)
+
+Consumer
+![Consumer-Test](docs/images/TestResult/S3-consumer-error.png)
+
+
 #### Scenario 4: Topic Normal Case
 - **Producer App**: Has `Azure Service Bus Data Sender` role on topic-1
 - **Consumer App**: Has `Azure Service Bus Data Receiver` role on topic-1/subscription-1
 - **Test**: Everything should success as every service have required permission.
 
+##### Result
+Producer
+
+![Producer-Test](docs/images/TestResult/S4-producer-success.png)
+
+Consumer
+
+![Consumer-Test](docs/images/TestResult/S4-consumer-success.png)
+note that for subscription-1, we also add filter to show only message with color red.
+
+![Consumer-Test](docs/images/TestResult/S4-consumer-subscription-filter.png)
+
 #### Scenario 5: Topic Error case
 - **Producer App**: Has `Azure Service Bus Data Sender` role on topic-1, but set environment variable to access topic-2
 - **Consumer App**: Has `Azure Service Bus Data Receiver` role on topic-1/subscription-1, but set environment variable to access topic-1/subscription-2
 - **Test**: Azure should show access denined error for both **Producer App** and **Consumer App**
+
+##### Result
+Producer
+![Producer-Test](docs/images/TestResult/S5-producer-error.png)
+
+Consumer
+![Consumer-Test](docs/images/TestResult/S5-consumer-error.png)
 
 ## 🐳 Deployment
 
@@ -289,8 +375,8 @@ docker buildx build . --platform="linux/amd64,linux/arm64" -t isaru66/springboot
 
 # Run with environment variables
 docker run -e AZURE_SERVICEBUS_NAMESPACE="your-namespace.servicebus.windows.net" \
-           -e AZURE_SERVICEBUS_QUEUE="your-topic" \
-           -e AZURE_SERVICEBUS_ENTITY_TYPE="topic" \
+           -e AZURE_SERVICEBUS_QUEUE="queue-1" \
+           -e AZURE_SERVICEBUS_ENTITY_TYPE="queue" \
            -p 8080:8080 \
            isaru66/springboot-azure-servicebus-producer
 ```
@@ -301,10 +387,10 @@ Deploy to AKS using the provided manifests in `k8s/` directories:
 
 ```bash
 # Apply producer deployment
-kubectl apply -f sample-code/azure-servicebus-producer-sample/k8s/deployment.yaml
+kubectl apply -f sample-code/azure-servicebus-producer-sample/k8s/queue-deployment.yaml
 
 # Apply consumer deployment
-kubectl apply -f sample-code/azure-servicebus-consumer-sample/k8s/deployment.yaml
+kubectl apply -f sample-code/azure-servicebus-consumer-sample/k8s/queue-deployment.yaml
 ```
 
 Adjust pod template spec's environment variable section to change behavior

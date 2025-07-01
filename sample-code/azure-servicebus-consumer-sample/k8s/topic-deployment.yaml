@@ -3,7 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sb-consumer
-  namespace: sb-queue-consumer
+  namespace: sb-topic-consumer
   labels:
     app: sb-consumer
 spec:
@@ -22,7 +22,7 @@ spec:
         app: sb-consumer
         azure.workload.identity/use: "true"  # Required for WorkloadIdentity. Only pods with this label can use workload identity.
     spec:
-      serviceAccountName: sa-sb-queue-consumer # Required for WorkloadIdentity, Service Account must map to User Assigned Managed Identity (UAMI) in Azure.
+      serviceAccountName: sa-sb-topic-consumer # Required for WorkloadIdentity, Service Account must map to User Assigned Managed Identity (UAMI) in Azure.
       # initContainers:
         # Init containers are exactly like regular containers, except:
           # - Init containers always run to completion.
@@ -39,8 +39,13 @@ spec:
             cpu: 1000m
             memory: 1Gi
         env:
+        - name: AZURE_SERVICEBUS_ENTITY_TYPE
+          value: topic
         - name: AZURE_SERVICEBUS_QUEUE
-          value: "queue-1"
+          value: "topic-1"
+        - name: AZURE_SERVICEBUS_SUBSCRIPTION_NAME
+          value: "subscription-1"
+          
         ports:
         - containerPort: 8080
           name: sb-consumer
@@ -51,7 +56,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: sb-consumer
-  namespace: sb-queue-consumer
+  namespace: sb-topic-consumer
 spec:
   selector:
     app: sb-consumer
@@ -67,5 +72,5 @@ kind: ServiceAccount
 metadata:
   annotations:
     azure.workload.identity/client-id: "2ff650e6-e203-4246-b1cc-a241037bb841" # UMI Client ID
-  name: "sa-sb-queue-consumer"
-  namespace: "sb-queue-consumer"
+  name: "sa-sb-topic-consumer"
+  namespace: "sb-topic-consumer"
